@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0f1f24">
+<title>Al Rovescio</title>
+<link rel="icon" type="image/png" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-title" content="Al Rovescio">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bowlby+One&family=Nunito:wght@600;800;900&display=swap">
+<style>
+/* Una schermata: titolo e punteggio in alto, palco con l'onda al centro, tasti in basso */
+:root{
+  --bg:#0f1f24; --panel:#17303a; --line:#24444f;
+  --ink:#f2f5f4; --dim:#9db4b8;
+  --rec:#ff5a4e; --rev:#7fd1ff; --ok:#5fe0a0;
+  --display:"Bowlby One","Arial Black",system-ui,sans-serif;
+  --body:"Nunito",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:600 16px/1.4 var(--body);
+  -webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+.app{height:100%;display:flex;flex-direction:column;gap:14px;max-width:520px;margin:0 auto;
+  padding-block:calc(14px + env(safe-area-inset-top,0px)) calc(16px + env(safe-area-inset-bottom,0px));
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1{font:400 clamp(30px,9vw,42px)/1 var(--display);margin:0;text-align:center;letter-spacing:.5px}
+h1 .flip{display:inline-block;color:var(--rev);animation:flip 3.2s ease-in-out infinite}
+@keyframes flip{0%,40%{transform:scaleX(1)}50%,90%{transform:scaleX(-1)}100%{transform:scaleX(1)}}
+@media (prefers-reduced-motion:reduce){h1 .flip{animation:none}}
+
+.score{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+.score .pl{min-width:0}
+.pl input{width:100%;text-overflow:ellipsis}
+.pl{background:var(--panel);border:2px solid var(--line);border-radius:16px;padding:8px 12px;
+  display:flex;align-items:center;justify-content:space-between;gap:8px;transition:border-color .2s}
+.pl.on{border-color:var(--ink)}
+.pl input{all:unset;font:800 15px var(--body);min-width:0;flex:1;color:var(--ink);user-select:text;-webkit-user-select:text}
+.pl input:focus{border-bottom:2px solid var(--rev)}
+.pl b{font:400 26px/1 var(--display);font-variant-numeric:tabular-nums}
+
+.stage{flex:1;min-height:0;background:var(--panel);border-radius:24px;padding:18px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center}
+.step{font:900 12px var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.msg{font:800 clamp(19px,5.4vw,23px)/1.25 var(--body);margin:0;text-wrap:balance;max-width:24ch}
+.msg em{font-style:normal;color:var(--rev)}
+canvas{width:100%;height:84px;display:block}
+.hint{font-size:14px;color:var(--dim);min-height:20px;margin:0}
+
+.big{width:120px;height:120px;border-radius:50%;border:0;cursor:pointer;flex:none;
+  background:var(--rec);color:#fff;font:900 15px var(--body);display:grid;place-items:center;
+  box-shadow:0 0 0 0 rgba(255,90,78,.5);transition:transform .12s}
+.big:active{transform:scale(.95)}
+.big svg{width:44px;height:44px}
+.big.play{background:var(--rev);color:#0f1f24}
+.big.live{animation:pulse 1.1s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,90,78,.55)}100%{box-shadow:0 0 0 26px rgba(255,90,78,0)}}
+.big:focus-visible,.btn:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+
+.actions{display:flex;flex-wrap:wrap;gap:10px}
+.btn{flex:1 1 140px;min-height:52px;border-radius:16px;border:2px solid var(--line);background:transparent;
+  color:var(--ink);font:800 16px var(--body);cursor:pointer;padding:10px 12px}
+.btn.main{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.btn.yes{background:var(--ok);border-color:var(--ok);color:#0b2a1c}
+.btn.no{border-color:var(--rec);color:var(--rec)}
+.btn:active{transform:scale(.97)}
+.foot{display:flex;justify-content:center}
+.link{all:unset;cursor:pointer;color:var(--dim);font-size:13px;text-decoration:underline;padding:4px 8px}
+.toast{position:fixed;left:50%;bottom:calc(90px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
+  background:var(--ink);color:var(--bg);font-weight:900;padding:10px 18px;border-radius:99px;opacity:0;
+  transition:opacity .25s;pointer-events:none}
+.toast.show{opacity:1}
+.seg{display:flex;background:var(--panel);border:2px solid var(--line);border-radius:14px;padding:3px;gap:3px}
+.seg button{all:unset;flex:1;text-align:center;cursor:pointer;padding:8px 6px;border-radius:10px;font:800 14px var(--body);color:var(--dim)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.seg button:focus-visible{outline:2px solid var(--rev)}
+.seg.small button{font-size:13px;padding:6px}
+.pl small{display:block;font:700 11px var(--body);color:var(--dim);letter-spacing:.06em;text-transform:uppercase}
+.pl input[readonly]{pointer-events:none}
+.word{font:400 clamp(26px,8vw,36px)/1.1 var(--display);color:var(--ok);margin:0;text-wrap:balance}
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>Al <span class="flip">Rovescio</span></h1>
+
+  <div class="seg" role="group" aria-label="Modalità">
+    <button id="m2" aria-pressed="true">2 giocatori</button>
+    <button id="mb" aria-pressed="false">Contro il bot</button>
+  </div>
+
+  <div class="score">
+    <div class="pl" id="p0"><input id="n0" maxlength="14" aria-label="Nome giocatore 1"><b id="s0">0</b></div>
+    <div class="pl" id="p1"><input id="n1" maxlength="14" aria-label="Nome giocatore 2"><b id="s1">0</b></div>
+  </div>
+
+  <div class="seg small" id="lvl" role="group" aria-label="Livello" hidden>
+    <button data-l="0">Facile</button>
+    <button data-l="1">Medio</button>
+    <button data-l="2">Difficile</button>
+  </div>
+
+  <section class="stage">
+    <div class="step" id="step"></div>
+    <p class="msg" id="msg"></p>
+    <p class="word" id="word" hidden></p>
+    <canvas id="wave" width="900" height="168"></canvas>
+    <p class="hint" id="hint"></p>
+    <button class="big" id="big" aria-label="Registra"></button>
+  </section>
+
+  <div class="actions" id="actions"></div>
+  <div class="foot"><button class="link" id="reset">Nuova partita</button></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const ICON_MIC = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="8.5" y="2" width="7" height="13" rx="3.5"/><path d="M5 11a7 7 0 0 0 14 0" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M12 18v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+const ICON_STOP = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2.5"/></svg>';
+const ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor" style="transform:scaleX(-1)"><path d="M7 4.5v15l13-7.5z"/></svg>';
+
+/* ---------- Stato della partita ---------- */
+let G = {names:["Giocatore 1","Giocatore 2"], score:[0,0], t:0, mode:"duo", lvl:0, bot:{pts:0, tries:0, streak:0, best:0}};
+try{ const s = JSON.parse(localStorage.getItem("rovescio")); if(s && s.names) G = Object.assign(G, s); }catch(e){}
+
+/* ---------- Parole del bot ---------- */
+const WORDS = [
+  ["Pizza","Gatto","Luna","Sole","Mare","Pane","Marco","Anna","Luca","Sara","Roma","Treno","Casa","Fiore","Torta","Palla","Nonna","Pasta","Cane","Topo","Vino","Neve","Lago","Moto","Rosa","Paolo","Elena","Bari","Pisa","Gelato"],
+  ["Cappuccino","Spaghetti","Pinocchio","Lasagna","Farfalla","Elefante","Bicicletta","Leonardo","Formaggio","Telefono","Pomodoro","Coccodrillo","Ciliegia","Arcobaleno","Mozzarella","Tartaruga","Cioccolato","Giraffa","Ombrello","Carnevale","Margherita","Francesca","Napoli","Venezia","Firenze","Pipistrello","Lampadina","Pantofola","Biscotto","Dinosauro"],
+  ["Buongiorno a tutti","Che bella giornata","Ciao come stai","Andiamo al mare","Viva la pizza","Mamma mia","Acqua in bocca","Tanti auguri","Buon appetito","Ti voglio bene","Che ore sono","Ho una fame da lupo","Piove sempre","Chi va piano va sano","Domani si parte","Il gatto dorme","Un caffè per favore","La pasta è pronta","Andiamo a casa","Forza e coraggio"]
+];
+let bag = [];
+function nextWord(){
+  if(!bag.length || bag.lvl !== G.lvl){ bag = WORDS[G.lvl].slice().sort(()=>Math.random()-.5); bag.lvl = G.lvl; }
+  return bag.pop();
+}
+let voiceReady = null;
+function loadVoice(){
+  if(!voiceReady) voiceReady = new Promise((res, rej) => {
+    const s = document.createElement("script"); s.src = "bot-voce.js";
+    s.onload = () => window.botVoce ? res() : rej(); s.onerror = rej;
+    document.head.appendChild(s);
+  });
+  return voiceReady;
+}
+async function botClip(text){
+  await loadVoice();
+  const wav = window.botVoce(text, {speed:125 + Math.round(Math.random()*15), pitch:35 + Math.round(Math.random()*25)});
+  if(!wav) return null;
+  const buf = await new Promise((res, rej) => ctx.decodeAudioData(wav, res, rej));
+  return clean(new Float32Array(buf.getChannelData(0)), buf.sampleRate);
+}
+let botWord = "", clipBot = null, clipMe = null;
+const save = () => { try{ localStorage.setItem("rovescio", JSON.stringify(G)); }catch(e){} };
+
+let phase = "a-rec";     // a-rec, a-done, b-listen, b-done, judged
+let clipA = null, clipB = null; // {data:Float32Array, rate}
+
+/* ---------- Audio ---------- */
+let ctx = null, stream = null, src = null, proc = null, sink = null, chunks = [], recording = false, recTimer = null;
+let playing = null;
+const MAX_SEC = 10;
+
+function session(type){ try{ if(navigator.audioSession) navigator.audioSession.type = type; }catch(e){} }
+
+function ensureCtx(){
+  if(!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+  if(ctx.state !== "running") return ctx.resume();
+  return Promise.resolve();
+}
+async function startRec(){
+  stopPlay();
+  session("play-and-record");
+  await ensureCtx();
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false, noiseSuppression:true, autoGainControl:true}});
+  }catch(e){
+    hint("Serve il microfono: consenti l'accesso e riprova."); session("playback"); return false;
+  }
+  src = ctx.createMediaStreamSource(stream);
+  proc = ctx.createScriptProcessor(4096, 1, 1);
+  sink = ctx.createGain(); sink.gain.value = 0;
+  chunks = [];
+  proc.onaudioprocess = e => {
+    if(!recording) return;
+    const d = e.inputBuffer.getChannelData(0);
+    chunks.push(new Float32Array(d));
+    let m = 0; for(let i=0;i<d.length;i+=16) m = Math.max(m, Math.abs(d[i]));
+    liveLevels.push(m); drawLive();
+  };
+  src.connect(proc); proc.connect(sink); sink.connect(ctx.destination);
+  recording = true; liveLevels = [];
+  recTimer = setTimeout(() => { if(recording) stopRec(); }, MAX_SEC*1000);
+  return true;
+}
+
+function stopRec(){
+  recording = false; clearTimeout(recTimer);
+  try{ src.disconnect(); proc.disconnect(); sink.disconnect(); }catch(e){}
+  if(stream) stream.getTracks().forEach(t => t.stop());
+  stream = null; session("playback");
+  let n = 0; chunks.forEach(c => n += c.length);
+  const all = new Float32Array(n); let o = 0;
+  chunks.forEach(c => { all.set(c, o); o += c.length; });
+  return clean(all, ctx.sampleRate);
+}
+
+// Toglie il silenzio all'inizio e alla fine e porta il volume al massimo
+function clean(d, rate){
+  const win = Math.round(rate*0.02), th = 0.025;
+  let a = 0, b = d.length;
+  const loud = i => { let m=0; for(let k=i;k<Math.min(i+win,d.length);k++) m=Math.max(m,Math.abs(d[k])); return m>th; };
+  while(a < d.length && !loud(a)) a += win;
+  while(b > a && !loud(Math.max(0,b-win))) b -= win;
+  const pad = Math.round(rate*0.08);
+  a = Math.max(0, a-pad); b = Math.min(d.length, b+pad);
+  if(b - a < rate*0.25) return null;
+  const out = d.slice(a, b);
+  let peak = 0; for(const v of out) peak = Math.max(peak, Math.abs(v));
+  const g = peak > 0 ? Math.min(0.92/peak, 8) : 1;
+  for(let i=0;i<out.length;i++) out[i] *= g;
+  const f = Math.round(rate*0.01); // dissolvenze brevissime per non fare clic
+  for(let i=0;i<f && i<out.length;i++){ out[i]*=i/f; out[out.length-1-i]*=i/f; }
+  return {data:out, rate};
+}
+
+function play(clip, reversed){
+  stopPlay();
+  if(!clip) return Promise.resolve();
+  if(ctx.state !== "running") ctx.resume();
+  const buf = ctx.createBuffer(1, clip.data.length, clip.rate);
+  const ch = buf.getChannelData(0);
+  if(reversed){ const L = clip.data.length; for(let i=0;i<L;i++) ch[i] = clip.data[L-1-i]; }
+  else ch.set(clip.data);
+  const s = ctx.createBufferSource(); s.buffer = buf; s.connect(ctx.destination);
+  const t0 = ctx.currentTime, dur = buf.duration;
+  playing = s;
+  return new Promise(res => {
+    s.onended = () => { if(playing === s) playing = null; drawClip(clip, reversed, -1); setBig(); res(); };
+    s.start();
+    setBig();
+    (function anim(){
+      if(playing !== s) return;
+      drawClip(clip, reversed, Math.min(1,(ctx.currentTime - t0)/dur));
+      requestAnimationFrame(anim);
+    })();
+  });
+}
+function stopPlay(){ if(playing){ const p = playing; playing = null; try{ p.stop(); }catch(e){} } }
+
+/* ---------- Onda ---------- */
+const cv = $("wave"), g2 = cv.getContext("2d");
+let liveLevels = [];
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function bars(levels, color, head, colorDone){
+  const W = cv.width, H = cv.height, n = levels.length;
+  g2.clearRect(0,0,W,H);
+  if(!n) { g2.fillStyle = css("--line"); g2.fillRect(0,H/2-2,W,4); return; }
+  const bw = W/n;
+  for(let i=0;i<n;i++){
+    const h = Math.max(6, levels[i]*H*0.95);
+    g2.fillStyle = (head >= 0 && i/n <= head) ? colorDone : color;
+    g2.fillRect(i*bw + bw*0.18, (H-h)/2, Math.max(2,bw*0.64), h);
+  }
+}
+function levelsOf(clip, reversed, n=72){
+  const d = clip.data, step = Math.floor(d.length/n), out = [];
+  for(let i=0;i<n;i++){ let m=0; for(let k=i*step;k<(i+1)*step;k+=8) m=Math.max(m,Math.abs(d[k])); out.push(m); }
+  return reversed ? out.reverse() : out;
+}
+function drawClip(clip, reversed, head){
+  if(!clip){ bars([], ""); return; }
+  bars(levelsOf(clip, reversed), reversed ? css("--rev") : css("--ink"), head, reversed ? css("--ink") : css("--rev"));
+}
+function drawLive(){
+  const n = 72, L = liveLevels.slice(-n);
+  while(L.length < n) L.unshift(0);
+  bars(L.map(v => Math.min(1, v*1.6)), css("--rec"), -1);
+}
+
+/* ---------- Interfaccia ---------- */
+const A = () => G.t, B = () => 1 - G.t;
+const nm = i => G.names[i] || ("Giocatore " + (i+1));
+function hint(t){ $("hint").textContent = t || ""; }
+function toast(t){ const el = $("toast"); el.textContent = t; el.classList.add("show"); setTimeout(()=>el.classList.remove("show"), 1400); }
+
+const MIC_PHASES = ["a-rec","b-listen","bot-listen"];
+function setBig(){
+  const b = $("big");
+  b.classList.remove("play","live");
+  b.hidden = phase === "judged" || phase === "bot-start" || phase === "bot-load";
+  if(recording){ b.innerHTML = ICON_STOP; b.classList.add("live"); b.setAttribute("aria-label","Ferma"); return; }
+  if(MIC_PHASES.includes(phase)){ b.innerHTML = ICON_MIC; b.setAttribute("aria-label","Registra"); }
+  else { b.innerHTML = ICON_PLAY; b.classList.add("play"); b.setAttribute("aria-label","Ascolta al contrario"); }
+}
+
+function actions(list){
+  const box = $("actions"); box.innerHTML = "";
+  list.forEach(([label, cls, fn]) => {
+    const el = document.createElement("button");
+    el.className = "btn " + (cls||""); el.textContent = label; el.onclick = fn;
+    box.appendChild(el);
+  });
+}
+
+function renderTop(){
+  const bot = G.mode === "bot";
+  $("m2").setAttribute("aria-pressed", !bot); $("mb").setAttribute("aria-pressed", bot);
+  $("lvl").hidden = !bot;
+  $("lvl").querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", +x.dataset.l === G.lvl));
+  $("reset").textContent = bot ? "Azzera punteggio" : "Nuova partita";
+  if(bot){
+    $("n0").readOnly = $("n1").readOnly = true;
+    $("n0").value = "Tu · " + G.bot.tries + " parole"; $("s0").textContent = G.bot.pts;
+    $("n1").value = "Serie (rec. " + G.bot.best + ")"; $("s1").textContent = G.bot.streak;
+    $("p0").classList.add("on"); $("p1").classList.remove("on");
+  } else {
+    $("n0").readOnly = $("n1").readOnly = false;
+    [0,1].forEach(i => {
+      $("s"+i).textContent = G.score[i];
+      if(document.activeElement !== $("n"+i)) $("n"+i).value = nm(i);
+      $("p"+i).classList.toggle("on", (phase==="a-rec"||phase==="a-done") ? i===A() : i===B());
+    });
+  }
+}
+
+function render(){
+  renderTop();
+  const a = nm(A()), b = nm(B());
+  hint(""); $("word").hidden = true;
+  switch(phase){
+    case "a-rec":
+      $("step").textContent = "Passo 1 di 3 · " + a;
+      $("msg").innerHTML = "<em>" + esc(a) + "</em>, di' una parola o una frase";
+      hint("Tocca il microfono, parla, tocca di nuovo per fermare.");
+      drawClip(null);
+      actions([]);
+      break;
+    case "a-done":
+      $("step").textContent = "Passo 1 di 3 · " + a;
+      $("msg").innerHTML = "Ecco come suona <em>al contrario</em>";
+      actions([["Rifai","",()=>{ clipA=null; go("a-rec"); }],["Passa a " + b,"main",()=>go("b-listen")]]);
+      break;
+    case "b-listen":
+      $("step").textContent = "Passo 2 di 3 · " + b;
+      $("msg").innerHTML = "<em>" + esc(b) + "</em>, ascolta e rifallo uguale";
+      hint("Imita i suoni al contrario, poi registrati col microfono.");
+      drawClip(clipA, true, -1);
+      actions([["Ascolta al contrario","",()=>play(clipA,true)]]);
+      break;
+    case "b-done":
+      $("step").textContent = "Passo 3 di 3 · Giudicate";
+      $("msg").innerHTML = "Rigirato dritto: <em>si capisce?</em>";
+      actions([
+        ["Riascolta la frase vera","",()=>play(clipA,false)],
+        ["Rifai","",()=>{ clipB=null; go("b-listen"); }],
+        ["Si capisce! +1","yes",()=>judge(true)],
+        ["Non si capisce","no",()=>judge(false)]
+      ]);
+      break;
+    case "judged":
+      $("step").textContent = "Fine turno";
+      $("msg").innerHTML = "Ora tocca a <em>" + esc(b) + "</em> dire la parola";
+      actions([["Prossimo turno","main",()=>{ G.t = B(); save(); clipA=clipB=null; go("a-rec"); }]]);
+      break;
+
+    /* --- Contro il bot --- */
+    case "bot-start":
+      $("step").textContent = "Contro il bot · " + ["Facile","Medio","Difficile"][G.lvl];
+      $("msg").innerHTML = "Il bot dice una " + (G.lvl===2 ? "frase" : "parola") + " <em>al contrario</em>: tu la ripeti";
+      hint(G.lvl===2 ? "Frasi brevi: le più difficili." : G.lvl===1 ? "Parole lunghe e nomi di città." : "Parole corte e nomi.");
+      drawClip(null);
+      actions([["Via, sentiamo!","main",newBot]]);
+      break;
+    case "bot-load":
+      $("step").textContent = "Contro il bot";
+      $("msg").innerHTML = "Il bot si sta <em>preparando</em>…";
+      hint("La prima volta ci mette qualche secondo.");
+      actions([]);
+      break;
+    case "bot-listen":
+      $("step").textContent = "Passo 1 di 2 · Ascolta e imita";
+      $("msg").innerHTML = "Rifai questi suoni <em>al contrario</em>";
+      hint("Poi tocca il microfono e registrati.");
+      drawClip(clipBot, true, -1);
+      actions([["Riascolta il bot","",()=>play(clipBot,true)],["Salta","",()=>{ G.bot.streak=0; save(); newBot(); }]]);
+      break;
+    case "bot-done":
+      $("step").textContent = "Passo 2 di 2 · Rigirato";
+      $("msg").innerHTML = "Ecco la tua voce rigirata: <em>che parola è?</em>";
+      actions([
+        ["Riascolta","",()=>play(clipMe,true)],
+        ["Rifai","",()=>{ clipMe=null; go("bot-listen"); }],
+        ["Svela la parola","main",()=>{ go("bot-reveal"); play(clipBot,false); }]
+      ]);
+      break;
+    case "bot-reveal":
+      $("step").textContent = "La parola era";
+      $("msg").innerHTML = "";
+      $("word").textContent = botWord; $("word").hidden = false;
+      hint("Il tocco blu fa sentire di nuovo la tua versione.");
+      drawClip(clipMe, true, -1);
+      actions([
+        ["Detta giusta! +1","yes",()=>botJudge(true)],
+        ["Non era lei","no",()=>botJudge(false)],
+        ["Riascolta il bot dritto","",()=>play(clipBot,false)]
+      ]);
+      break;
+  }
+  setBig();
+}
+function esc(s){ return s.replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function go(p){ stopPlay(); phase = p; render(); }
+
+function judge(ok){
+  if(ok){ G.score[B()]++; toast("Punto a " + nm(B()) + "!"); }
+  else toast("Niente punto");
+  save(); go("judged");
+}
+
+async function newBot(){
+  clipMe = null;
+  go("bot-load");
+  try{
+    await ensureCtx();
+    botWord = nextWord();
+    clipBot = await botClip(botWord);
+    if(!clipBot) throw 0;
+  }catch(e){
+    voiceReady = null;
+    go("bot-start"); hint("Non riesco a caricare la voce del bot: controlla che bot-voce.js sia nella stessa cartella."); return;
+  }
+  if(G.mode !== "bot") return;
+  go("bot-listen"); play(clipBot, true);
+}
+function botJudge(ok){
+  G.bot.tries++;
+  if(ok){ G.bot.pts++; G.bot.streak++; G.bot.best = Math.max(G.bot.best, G.bot.streak); toast(G.bot.streak >= 3 ? "Serie di " + G.bot.streak + "!" : "Bravo! +1"); }
+  else { G.bot.streak = 0; toast("Peccato, avanti la prossima"); }
+  save(); newBot();
+}
+
+function setMode(m){
+  if(recording) stopRec();
+  G.mode = m; save(); clipA = clipB = clipMe = null;
+  go(m === "bot" ? "bot-start" : "a-rec");
+}
+$("m2").onclick = () => setMode("duo");
+$("mb").onclick = () => { setMode("bot"); loadVoice().catch(()=>{ voiceReady = null; }); };
+$("lvl").querySelectorAll("button").forEach(x => x.onclick = () => {
+  G.lvl = +x.dataset.l; save();
+  if(phase !== "bot-load") go("bot-start");
+});
+
+$("big").onclick = async () => {
+  if(recording){
+    const clip = stopRec();
+    if(!clip){ setBig(); drawClip(null); hint("Non ho sentito niente, riprova un po' più forte."); return; }
+    if(phase === "a-rec"){ clipA = clip; go("a-done"); play(clipA, true); }
+    else if(phase === "b-listen"){ clipB = clip; go("b-done"); play(clipB, true); }
+    else { clipMe = clip; go("bot-done"); play(clipMe, true); }
+    return;
+  }
+  if(MIC_PHASES.includes(phase)){
+    if(await startRec()){ setBig(); hint("Sto registrando… (massimo " + MAX_SEC + " secondi)"); }
+    return;
+  }
+  if(phase === "a-done") play(clipA, true);
+  else if(phase === "b-done") play(clipB, true);
+  else if(phase === "bot-done" || phase === "bot-reveal") play(clipMe, true);
+};
+
+[0,1].forEach(i => {
+  const el = $("n"+i);
+  el.addEventListener("input", () => { G.names[i] = el.value.trim(); save(); });
+  el.addEventListener("blur", render);
+  el.addEventListener("keydown", e => { if(e.key === "Enter") el.blur(); });
+});
+
+let armed = false;
+$("reset").onclick = () => {
+  if(!armed){ armed = true; $("reset").textContent = "Tocca ancora per azzerare"; setTimeout(()=>{ armed=false; renderTop(); }, 2500); return; }
+  armed = false;
+  if(G.mode === "bot"){ G.bot = {pts:0, tries:0, streak:0, best:0}; save(); clipMe = null; go("bot-start"); }
+  else { G.score = [0,0]; G.t = 0; save(); clipA = clipB = null; go("a-rec"); }
+};
+
+if(G.mode === "bot") phase = "bot-start";
+render();
+</script>
+</body>
+</html>
