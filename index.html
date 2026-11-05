@@ -167,7 +167,7 @@ let clipA = null, clipB = null; // {data:Float32Array, rate}
 /* ---------- Audio ---------- */
 let ctx = null, stream = null, src = null, proc = null, sink = null, chunks = [], recording = false, recTimer = null;
 let playing = null;
-const MAX_SEC = 10;
+const MAX_SEC = 15;
 
 function session(type){ try{ if(navigator.audioSession) navigator.audioSession.type = type; }catch(e){} }
 
@@ -176,58 +176,81 @@ function ensureCtx(){
   if(ctx.state !== "running") return ctx.resume();
   return Promise.resolve();
 }
+let mediaRec = null, recChunks = [], analyser = null, meterRaf = 0, stopping = false;
+function pickMime(){
+  const c = ["audio/mp4","audio/webm;codecs=opus","audio/webm","audio/ogg"];
+  for(const m of c){ try{ if(window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m; }catch(e){} }
+  return "";
+}
 async function startRec(){
   stopPlay();
   session("play-and-record");
   await ensureCtx();
+  if(!window.MediaRecorder){ hint("Questo browser non sa registrare: aggiorna iOS o usa Safari/Chrome."); return false; }
   try{
-    stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false, noiseSuppression:true, autoGainControl:true}});
+    stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true, noiseSuppression:true, autoGainControl:true}});
   }catch(e){
     hint("Serve il microfono: consenti l'accesso e riprova."); session("playback"); return false;
   }
-  src = ctx.createMediaStreamSource(stream);
-  proc = ctx.createScriptProcessor(4096, 1, 1);
-  sink = ctx.createGain(); sink.gain.value = 0;
-  chunks = [];
-  proc.onaudioprocess = e => {
-    if(!recording) return;
-    const d = e.inputBuffer.getChannelData(0);
-    chunks.push(new Float32Array(d));
-    let m = 0; for(let i=0;i<d.length;i+=16) m = Math.max(m, Math.abs(d[i]));
-    liveLevels.push(m); drawLive();
-  };
-  src.connect(proc); proc.connect(sink); sink.connect(ctx.destination);
-  recording = true; liveLevels = [];
-  recTimer = setTimeout(() => { if(recording) stopRec(); }, MAX_SEC*1000);
+  // indicatore di livello (solo grafica)
+  try{
+    src = ctx.createMediaStreamSource(stream);
+    analyser = ctx.createAnalyser(); analyser.fftSize = 1024;
+    src.connect(analyser);
+    const buf = new Float32Array(analyser.fftSize);
+    liveLevels = [];
+    let last = 0;
+    (function meter(t){
+      if(!recording && !stopping) return;
+      if(t - last > 60){ last = t; analyser.getFloatTimeDomainData(buf); let m=0; for(const v of buf) m=Math.max(m,Math.abs(v)); liveLevels.push(m); drawLive(); }
+      meterRaf = requestAnimationFrame(meter);
+    })(0);
+  }catch(e){}
+  const mime = pickMime();
+  mediaRec = new MediaRecorder(stream, mime ? {mimeType:mime} : undefined);
+  recChunks = [];
+  mediaRec.ondataavailable = e => { if(e.data && e.data.size) recChunks.push(e.data); };
+  await new Promise(res => { mediaRec.onstart = res; mediaRec.start(250); setTimeout(res, 800); });
+  recording = true;
+  recTimer = setTimeout(() => { if(recording) finishRec(); }, MAX_SEC*1000);
   return true;
 }
 
-function stopRec(){
-  recording = false; clearTimeout(recTimer);
-  try{ src.disconnect(); proc.disconnect(); sink.disconnect(); }catch(e){}
+// Continua a registrare un attimo dopo lo stop, così l'ultima sillaba non si perde
+async function stopRec(){
+  recording = false; stopping = true; clearTimeout(recTimer);
+  await new Promise(r => setTimeout(r, 400));
+  const blob = await new Promise(res => {
+    mediaRec.onstop = () => res(new Blob(recChunks, {type: mediaRec.mimeType || "audio/mp4"}));
+    try{ mediaRec.stop(); }catch(e){ res(new Blob(recChunks)); }
+  });
+  stopping = false; cancelAnimationFrame(meterRaf);
+  try{ src.disconnect(); }catch(e){}
   if(stream) stream.getTracks().forEach(t => t.stop());
   stream = null; session("playback");
-  let n = 0; chunks.forEach(c => n += c.length);
-  const all = new Float32Array(n); let o = 0;
-  chunks.forEach(c => { all.set(c, o); o += c.length; });
-  return clean(all, ctx.sampleRate);
+  await ensureCtx();
+  try{
+    const ab = await blob.arrayBuffer();
+    const audio = await new Promise((res, rej) => ctx.decodeAudioData(ab, res, rej));
+    return clean(new Float32Array(audio.getChannelData(0)), audio.sampleRate);
+  }catch(e){ return null; }
 }
 
-// Toglie il silenzio all'inizio e alla fine e porta il volume al massimo
+// Toglie il silenzio all'inizio e alla fine (con margine largo) e porta il volume al massimo
 function clean(d, rate){
-  const win = Math.round(rate*0.02), th = 0.025;
+  let peak = 0; for(let i=0;i<d.length;i+=4) peak = Math.max(peak, Math.abs(d[i]));
+  if(peak < 0.008) return null;
+  const win = Math.round(rate*0.02), th = Math.max(0.006, peak*0.05);
   let a = 0, b = d.length;
   const loud = i => { let m=0; for(let k=i;k<Math.min(i+win,d.length);k++) m=Math.max(m,Math.abs(d[k])); return m>th; };
   while(a < d.length && !loud(a)) a += win;
   while(b > a && !loud(Math.max(0,b-win))) b -= win;
-  const pad = Math.round(rate*0.08);
-  a = Math.max(0, a-pad); b = Math.min(d.length, b+pad);
-  if(b - a < rate*0.25) return null;
+  a = Math.max(0, a - Math.round(rate*0.2)); b = Math.min(d.length, b + Math.round(rate*0.3));
+  if(b - a < rate*0.2) return null;
   const out = d.slice(a, b);
-  let peak = 0; for(const v of out) peak = Math.max(peak, Math.abs(v));
-  const g = peak > 0 ? Math.min(0.92/peak, 8) : 1;
+  const g = Math.min(0.92/peak, 8);
   for(let i=0;i<out.length;i++) out[i] *= g;
-  const f = Math.round(rate*0.01); // dissolvenze brevissime per non fare clic
+  const f = Math.round(rate*0.01);
   for(let i=0;i<f && i<out.length;i++){ out[i]*=i/f; out[out.length-1-i]*=i/f; }
   return {data:out, rate};
 }
@@ -460,17 +483,23 @@ $("lvl").querySelectorAll("button").forEach(x => x.onclick = () => {
   if(phase !== "bot-load") go("bot-start");
 });
 
+let busy = false;
+async function finishRec(){
+  if(busy) return; busy = true;
+  hint("Un attimo…");
+  const clip = await stopRec();
+  busy = false;
+  if(!clip){ setBig(); drawClip(null); hint("Non ho sentito niente, riprova un po' più forte."); return; }
+  if(phase === "a-rec"){ clipA = clip; go("a-done"); play(clipA, true); }
+  else if(phase === "b-listen"){ clipB = clip; go("b-done"); play(clipB, true); }
+  else { clipMe = clip; go("bot-done"); play(clipMe, true); }
+}
 $("big").onclick = async () => {
-  if(recording){
-    const clip = stopRec();
-    if(!clip){ setBig(); drawClip(null); hint("Non ho sentito niente, riprova un po' più forte."); return; }
-    if(phase === "a-rec"){ clipA = clip; go("a-done"); play(clipA, true); }
-    else if(phase === "b-listen"){ clipB = clip; go("b-done"); play(clipB, true); }
-    else { clipMe = clip; go("bot-done"); play(clipMe, true); }
-    return;
-  }
+  if(busy) return;
+  if(recording){ finishRec(); return; }
   if(MIC_PHASES.includes(phase)){
-    if(await startRec()){ setBig(); hint("Sto registrando… (massimo " + MAX_SEC + " secondi)"); }
+    hint("Accendo il microfono…");
+    if(await startRec()){ setBig(); hint("Parla ora! Tocca di nuovo quando hai finito (massimo " + MAX_SEC + " secondi)."); }
     return;
   }
   if(phase === "a-done") play(clipA, true);
